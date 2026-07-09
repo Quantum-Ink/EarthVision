@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { TyphoonData } from '@/types'
-import { generateMockTyphoonData } from '@/lib/data'
+import { fetchActiveTyphoons, generateMockTyphoonData } from '@/lib/data'
 import { TyphoonMap } from '@/components/map/typhoon-map'
 import { TyphoonList } from '@/components/typhoon/typhoon-list'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -39,20 +39,17 @@ export default function HomePage() {
   const fetchTyphoons = useCallback(async () => {
     setLoading(true)
     try {
-      // 尝试从API获取真实数据
-      const response = await fetch('/api/typhoons?status=ACTIVE')
-      if (response.ok) {
-        const data = await response.json()
-        if (data.success && data.data && data.data.length > 0) {
-          setTyphoons(data.data)
-          setDataSource(data.data[0]?.dataSource || '实时数据')
-          setLastUpdate(new Date().toLocaleTimeString('zh-CN'))
-          setLoading(false)
-          return
-        }
+      // 优先获取实时数据
+      const data = await fetchActiveTyphoons()
+      if (data && data.length > 0) {
+        setTyphoons(data)
+        setDataSource(data[0]?.dataSource || '实时数据')
+        setLastUpdate(new Date().toLocaleTimeString('zh-CN'))
+        setLoading(false)
+        return
       }
     } catch (e) {
-      console.warn('无法获取API数据，使用本地数据')
+      console.warn('获取实时数据失败，使用模拟数据')
     }
 
     // 降级到本地模拟数据
