@@ -1,0 +1,203 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Typhoon {
+  id            String         @id @default(cuid())
+  name          String
+  nameCn        String?
+  internationalId String?
+  basin         String
+  year          Int
+  category      TyphoonCategory
+  status        TyphoonStatus  @default(ACTIVE)
+  currentLat    Float
+  currentLng    Float
+  maxWindSpeed  Float
+  minPressure   Float
+  movementSpeed Float?
+  movementDir   String?
+  radius15knots Float?
+  radius30knots Float?
+  radius50knots Float?
+  startDatetime DateTime
+  endDatetime   DateTime?
+  lastUpdated   DateTime       @updatedAt
+  createdAt     DateTime       @default(now())
+  dataSource    String
+  description   String?
+
+  positions     TyphoonPosition[]
+  forecasts     TyphoonForecast[]
+  aiAnalyses    AIAnalysis[]
+  impacts       TyphoonImpact[]
+  alerts        TyphoonAlert[]
+}
+
+enum TyphoonCategory {
+  TROPICAL_DEPRESSION
+  TROPICAL_STORM
+  SEVERE_TROPICAL_STORM
+  TYPHOON
+  SEVERE_TYPHOON
+  SUPER_TYPHOON
+}
+
+enum TyphoonStatus {
+  ACTIVE
+  DISSIPATED
+  EXTRATROPICAL
+  REMNANT
+}
+
+model TyphoonPosition {
+  id            String   @id @default(cuid())
+  typhoonId     String
+  typhoon       Typhoon  @relation(fields: [typhoonId], references: [id])
+  latitude      Float
+  longitude     Float
+  windSpeed     Float
+  pressure      Float
+  category      TyphoonCategory
+  timestamp     DateTime
+  movementSpeed Float?
+  movementDir   String?
+  radius15knots Float?
+  radius30knots Float?
+  radius50knots Float?
+  createdAt     DateTime @default(now())
+}
+
+model TyphoonForecast {
+  id            String         @id @default(cuid())
+  typhoonId     String
+  typhoon       Typhoon        @relation(fields: [typhoonId], references: [id])
+  source        String
+  forecastTime  DateTime
+  latitude      Float
+  longitude     Float
+  windSpeed     Float
+  pressure      Float
+  category      TyphoonCategory
+  confidence    Float?
+  createdAt     DateTime       @default(now())
+}
+
+model AIAnalysis {
+  id            String         @id @default(cuid())
+  typhoonId     String
+  typhoon       Typhoon        @relation(fields: [typhoonId], references: [id])
+  analysisType  AnalysisType
+  summary       String
+  pathPrediction Json?
+  landingProbability Json?
+  cityImpact    Json?
+  riskLevel     RiskLevel
+  suggestions   Json?
+  rawData       Json?
+  modelVersion  String?
+  createdAt     DateTime       @default(now())
+}
+
+enum AnalysisType {
+  PATH_PREDICTION
+  RISK_ASSESSMENT
+  IMPACT_ANALYSIS
+  FULL_REPORT
+}
+
+enum RiskLevel {
+  LOW
+  MODERATE
+  HIGH
+  EXTREME
+}
+
+model TyphoonImpact {
+  id            String   @id @default(cuid())
+  typhoonId     String
+  typhoon       Typhoon  @relation(fields: [typhoonId], references: [id])
+  region        String
+  country       String
+  city          String?
+  impactType    String
+  severity      Int
+  description   String?
+  estimatedLoss Float?
+  affectedPeople Int?
+  startTime     DateTime
+  endTime       DateTime?
+  createdAt     DateTime @default(now())
+}
+
+model TyphoonAlert {
+  id            String   @id @default(cuid())
+  typhoonId     String
+  typhoon       Typhoon  @relation(fields: [typhoonId], references: [id])
+  alertLevel    AlertLevel
+  region        String
+  message       String
+  issuedAt      DateTime @default(now())
+  expiresAt     DateTime?
+  isActive      Boolean  @default(true)
+}
+
+enum AlertLevel {
+  BLUE
+  YELLOW
+  ORANGE
+  RED
+}
+
+model DataSource {
+  id            String   @id @default(cuid())
+  name          String
+  url           String
+  apiKey        String?
+  lastSync      DateTime?
+  syncStatus    SyncStatus @default(IDLE)
+  errorMessage  String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+enum SyncStatus {
+  IDLE
+  SYNCING
+  SUCCESS
+  ERROR
+}
+
+model AIUsageLog {
+  id            String   @id @default(cuid())
+  userId        String?
+  analysisType  AnalysisType
+  typhoonId     String?
+  inputTokens   Int
+  outputTokens  Int
+  cost          Float?
+  modelVersion  String
+  createdAt     DateTime @default(now())
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String?
+  role          UserRole @default(VIEWER)
+  apiKey        String?  @unique
+  lastLogin     DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+enum UserRole {
+  ADMIN
+  ANALYST
+  VIEWER
+}
