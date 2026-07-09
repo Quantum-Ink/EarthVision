@@ -1,0 +1,432 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// 台风主表
+model Typhoon {
+  id              String         @id @default(cuid())
+  internationalId String?        @unique  // 国际编号 如 202404W
+  name            String
+  nameCn          String?
+  nameJp          String?
+  nameKr          String?
+  basin           String         // 海域: WP, EP, CP, NI, SI, SP
+  year            Int
+  season          Int            // 季节编号
+  sequenceNumber  Int            // 序号
+  category        TyphoonCategory
+  status          TyphoonStatus  @default(ACTIVE)
+  currentLat      Float
+  currentLng      Float
+  maxWindSpeed    Float          // knots
+  maxWindGust     Float?         // knots
+  minPressure     Float          // hPa
+  movementSpeed   Float?         // knots
+  movementDir     String?        // 移动方向 N, NE, E, SE, S, SW, W, NW
+  radius7kt       Float?         // 七级风圈 (nm)
+  radius10kt      Float?         // 十级风圈 (nm)
+  radius12kt      Float?         // 十二级风圈 (nm)
+  stormRadius     Float?         // 暴风半径 (nm)
+  startDatetime   DateTime
+  endDatetime     DateTime?
+  landfallTime    DateTime?
+  landfallLat     Float?
+  landfallLng     Float?
+  landfallCountry String?
+  lastUpdated     DateTime       @updatedAt
+  createdAt       DateTime       @default(now())
+  description     String?
+  ecmwfTrackId    String?
+  bestTrackId     String?
+
+  positions       TyphoonPosition[]
+  forecasts       TyphoonForecast[]
+  fusedPaths      FusedPath[]
+  aiAnalyses      AIAnalysis[]
+  impacts         TyphoonImpact[]
+  alerts          TyphoonAlert[]
+  probabilityCone ProbabilityCone[]
+  monteCarloSims  MonteCarloSimulation[]
+  exportJobs      ExportJob[]
+}
+
+enum TyphoonCategory {
+  TROPICAL_DEPRESSION
+  TROPICAL_STORM
+  SEVERE_TROPICAL_STORM
+  TYPHOON
+  SEVERE_TYPHOON
+  SUPER_TYPHOON
+}
+
+enum TyphoonStatus {
+  ACTIVE
+  DISSIPATED
+  EXTRATROPICAL
+  REMNANT
+  LANDFALL
+}
+
+// 最佳路径（观测点）
+model TyphoonPosition {
+  id            String   @id @default(cuid())
+  typhoonId     String
+  typhoon       Typhoon  @relation(fields: [typhoonId], references: [id])
+  latitude      Float
+  longitude     Float
+  windSpeed     Float    // knots
+  windGust      Float?   // knots
+  pressure      Float    // hPa
+  category      TyphoonCategory
+  timestamp     DateTime
+  forecastHour  Int      @default(0) // 0 = observation
+  movementSpeed Float?
+  movementDir   String?
+  radius7kt     Float?
+  radius10kt    Float?
+  radius12kt    Float?
+  stormRadius   Float?
+  source        String   @default("BEST_TRACK")
+  confidence    Float?   // 0-1
+  createdAt     DateTime @default(now())
+
+  @@index([typhoonId, timestamp])
+  @@index([typhoonId, forecastHour])
+}
+
+// 各机构预报
+model TyphoonForecast {
+  id            String   @id @default(cuid())
+  typhoonId     String
+  typhoon       Typhoon  @relation(fields: [typhoonId], references: [id])
+  source        String   // JTWC, CMA, JMA, ECMWF, etc.
+  modelRun      DateTime // 模型运行时间
+  forecastTime  DateTime // 预报时间
+  forecastHour  Int      // 预报时效 (小时)
+  latitude      Float
+  longitude     Float
+  windSpeed     Float
+  windGust      Float?
+  pressure      Float
+  category      TyphoonCategory
+  movementSpeed Float?
+  movementDir   String?
+  radius7kt     Float?
+  radius10kt    Float?
+  radius12kt    Float?
+  stormRadius   Float?
+  confidence    Float?   // 0-1
+  rawData       Json?    // 原始数据
+  createdAt     DateTime @default(now())
+
+  @@index([typhoonId, source])
+  @@index([typhoonId, forecastHour])
+  @@unique([typhoonId, source, modelRun, forecastHour])
+}
+
+// 融合路径
+model FusedPath {
+  id            String   @id @default(cuid())
+  typhoonId     String
+  typhoon       Typhoon  @relation(fields: [typhoonId], references: [id])
+  method        FusionMethod
+  forecastTime  DateTime
+  forecastHour  Int
+  latitude      Float
+  longitude     Float
+  windSpeed     Float
+  windGust      Float?
+  pressure      Float
+  category      TyphoonCategory
+  movementSpeed Float?
+  movementDir   String?
+  radius7kt     Float?
+  radius10kt    Float?
+  radius12kt    Float?
+  confidence    Float
+  weights       Json     // 各机构权重
+  variance      Float?   // 方差
+  createdAt     DateTime @default(now())
+
+  @@index([typhoonId, method])
+  @@index([typhoonId, forecastHour])
+}
+
+enum FusionMethod {
+  WEIGHTED_MEAN
+  KALMAN_FILTER
+  PARTICLE_FILTER
+  GAUSSIAN_PROCESS
+  BAYESIAN_FUSION
+  ENSEMBLE_FORECAST
+  TRAJECTORY_CLUSTERING
+}
+
+// 概率锥
+model ProbabilityCone {
+  id            String   @id @default(cuid())
+  typhoonId     String
+  typhoon       Typhoon  @relation(fields: [typhoonId], references: [id])
+  method        String   // MONTE_CARLO, BOOTSTRAP, BAYESIAN, ENSEMBLE
+  forecastHour  Int
+  probability   Float    // 0.5, 0.7, 0.9
+  polygon       Json     // GeoJSON polygon
+  centerLat     Float
+  centerLng     Float
+  semiMajor     Float    // 长半轴 (km)
+  semiMinor     Float    // 短半轴 (km)
+  orientation   Float    // 方向角
+  createdAt     DateTime @default(now())
+
+  @@index([typhoonId, probability])
+}
+
+// Monte Carlo 模拟
+model MonteCarloSimulation {
+  id            String   @id @default(cuid())
+  typhoonId     String
+  typhoon       Typhoon  @relation(fields: [typhoonId], references: [id])
+  runId         String
+  iteration     Int
+  forecastHour  Int
+  latitude      Float
+  longitude     Float
+  windSpeed     Float
+  pressure      Float
+  perturbation  Json     // 扰动参数
+  createdAt     DateTime @default(now())
+
+  @@index([typhoonId, runId])
+  @@index([typhoonId, forecastHour])
+}
+
+// AI分析
+model AIAnalysis {
+  id              String   @id @default(cuid())
+  typhoonId       String
+  typhoon         Typhoon  @relation(fields: [typhoonId], references: [id])
+  analysisType    AnalysisType
+  summary         String
+  pathAnalysis    Json?    // 路径分析
+  turnReason      String?  // 转向原因
+  intensifyReason String?  // 增强原因
+  weakenReason    String?  // 减弱原因
+  landfallAnalysis Json?   // 登陆分析
+  riskAnalysis    Json?    // 风险分析
+  cityImpact      Json?    // 城市影响
+  suggestions     Json?    // 防灾建议
+  confidenceScore Float?   // 可信度评分 0-100
+  rawData         Json?
+  modelVersion    String?
+  inputTokens     Int?
+  outputTokens    Int?
+  createdAt       DateTime @default(now())
+
+  @@index([typhoonId, analysisType])
+}
+
+enum AnalysisType {
+  PATH_ANALYSIS
+  INTENSITY_ANALYSIS
+  LANDFALL_ANALYSIS
+  RISK_ASSESSMENT
+  CITY_IMPACT
+  FULL_REPORT
+}
+
+// 台风影响
+model TyphoonImpact {
+  id            String   @id @default(cuid())
+  typhoonId     String
+  typhoon       Typhoon  @relation(fields: [typhoonId], references: [id])
+  region        String
+  country       String
+  countryCode   String
+  city          String?
+  lat           Float?
+  lng           Float?
+  impactType    String   // WIND, RAIN, STORM_SURGE, FLOOD, LANDSLIDE
+  severity      Int      // 1-10
+  description   String?
+  estimatedLoss Float?
+  affectedPeople Int?
+  startTime     DateTime
+  endTime       DateTime?
+  createdAt     DateTime @default(now())
+
+  @@index([typhoonId, country])
+  @@index([typhoonId, city])
+}
+
+// 预警
+model TyphoonAlert {
+  id            String   @id @default(cuid())
+  typhoonId     String
+  typhoon       Typhoon  @relation(fields: [typhoonId], references: [id])
+  alertLevel    AlertLevel
+  region        String
+  country       String
+  message       String
+  source        String
+  issuedAt      DateTime @default(now())
+  expiresAt     DateTime?
+  isActive      Boolean  @default(true)
+}
+
+enum AlertLevel {
+  BLUE
+  YELLOW
+  ORANGE
+  RED
+  EMERGENCY
+}
+
+// 数据源配置
+model DataSource {
+  id            String   @id @default(cuid())
+  name          String   @unique
+  fullName      String
+  country       String
+  url           String
+  apiUrl        String?
+  apiKey        String?
+  format        String   // JSON, XML, CSV, TEXT
+  updateFreq    Int      // 更新频率 (分钟)
+  lastSync      DateTime?
+  lastError     String?
+  syncStatus    SyncStatus @default(IDLE)
+  isActive      Boolean  @default(true)
+  priority      Int      @default(5) // 1-10, 优先级
+  reliability   Float    @default(0.8) // 可靠性 0-1
+  config        Json?    // 额外配置
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+enum SyncStatus {
+  IDLE
+  SYNCING
+  SUCCESS
+  ERROR
+  TIMEOUT
+}
+
+// AI使用日志
+model AIUsageLog {
+  id            String   @id @default(cuid())
+  userId        String?
+  endpoint      String
+  analysisType  String
+  typhoonId     String?
+  inputTokens   Int
+  outputTokens  Int
+  cost          Float?
+  modelVersion  String
+  latency       Int      // 毫秒
+  success       Boolean  @default(true)
+  errorMessage  String?
+  createdAt     DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+// 用户
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String?
+  passwordHash  String?
+  role          UserRole @default(VIEWER)
+  apiKey        String?  @unique
+  lastLogin     DateTime?
+  loginCount    Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+enum UserRole {
+  ADMIN
+  ANALYST
+  VIEWER
+  API_USER
+}
+
+// 导出任务
+model ExportJob {
+  id            String   @id @default(cuid())
+  typhoonId     String
+  typhoon       Typhoon  @relation(fields: [typhoonId], references: [id])
+  userId        String?
+  format        ExportFormat
+  status        ExportStatus @default(PENDING)
+  config        Json     // 导出配置
+  filePath      String?
+  fileSize      Int?
+  errorMessage  String?
+  createdAt     DateTime @default(now())
+  completedAt   DateTime?
+}
+
+enum ExportFormat {
+  PNG
+  SVG
+  PDF
+  CSV
+  EXCEL
+  JSON
+}
+
+enum ExportStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+// 模型版本管理
+model MLModel {
+  id            String   @id @default(cuid())
+  name          String
+  version       String
+  framework     String   // PYTORCH, TENSORFLOW, ONNX, XGBOOST, etc.
+  modelType     String   // PATH_PREDICTION, INTENSITY, LANDFALL
+  description   String?
+  filePath      String
+  fileSize      Int
+  accuracy      Float?
+  mae           Float?
+  rmse          Float?
+  trainingData  Json?
+  hyperparams   Json?
+  isActive      Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  @@unique([name, version])
+}
+
+// 训练任务
+model TrainingJob {
+  id            String   @id @default(cuid())
+  modelId       String?
+  status        TrainingStatus @default(PENDING)
+  config        Json
+  progress      Float    @default(0)
+  metrics       Json?
+  startTime     DateTime?
+  endTime       DateTime?
+  errorMessage  String?
+  createdAt     DateTime @default(now())
+}
+
+enum TrainingStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
