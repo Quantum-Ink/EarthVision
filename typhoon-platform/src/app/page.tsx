@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { TyphoonData } from '@/types'
 import { generateMockTyphoonData } from '@/lib/data'
@@ -24,18 +24,96 @@ import {
   Activity,
   TrendingUp,
   ArrowRight,
+  RefreshCw,
+  Loader2,
 } from 'lucide-react'
 
 export default function HomePage() {
   const router = useRouter()
-  const [typhoons] = useState<TyphoonData[]>(() => generateMockTyphoonData())
+  const [typhoons, setTyphoons] = useState<TyphoonData[]>([])
+  const [loading, setLoading] = useState(true)
   const [selectedTyphoon, setSelectedTyphoon] = useState<TyphoonData | null>(null)
+  const [dataSource, setDataSource] = useState<string>('加载中...')
+  const [lastUpdate, setLastUpdate] = useState<string>('')
+
+  const fetchTyphoons = useCallback(async () => {
+    setLoading(true)
+    try {
+      // 尝试从API获取真实数据
+      const response = await fetch('/api/typhoons?status=ACTIVE')
+      if (response.ok) {
+        const data = await response.json()
+        if (data.success && data.data && data.data.length > 0) {
+          setTyphoons(data.data)
+          setDataSource(data.data[0]?.dataSource || '实时数据')
+          setLastUpdate(new Date().toLocaleTimeString('zh-CN'))
+          setLoading(false)
+          return
+        }
+      }
+    } catch (e) {
+      console.warn('无法获取API数据，使用本地数据')
+    }
+
+    // 降级到本地模拟数据
+    const mockData = generateMockTyphoonData()
+    setTyphoons(mockData)
+    setDataSource('模拟数据')
+    setLastUpdate(new Date().toLocaleTimeString('zh-CN'))
+    setLoading(false)
+  }, [])
+
+  useEffect(() => {
+    fetchTyphoons()
+    // 每5分钟自动刷新
+    const interval = setInterval(fetchTyphoons, 5 * 60 * 1000)
+    return () => clearInterval(interval)
+  }, [fetchTyphoons])
 
   const activeTyphoons = typhoons.filter((t) => t.status === 'ACTIVE')
   const extremeTyphoons = typhoons.filter((t) => t.category === 'SUPER_TYPHOON' || t.category === 'SEVERE_TYPHOON')
 
+  if (loading && typhoons.length === 0) {
+    return (
+      <div className="flex items-center justify-center min-h-[calc(100vh-3.5rem)]">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-500 mx-auto mb-4" />
+          <p className="text-muted-foreground">正在获取台风数据...</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="container py-6 space-y-6">
+      {/* 数据状态栏 */}
+      <div className="flex items-center justify-between bg-slate-800/50 rounded-lg px-4 py-2">
+        <div className="flex items-center space-x-4">
+          <Badge variant={dataSource === '模拟数据' ? 'secondary' : 'default'}>
+            {dataSource === '模拟数据' ? '📡 模拟数据' : '🛰️ 实时数据'}
+          </Badge>
+          <span className="text-sm text-muted-foreground">
+            数据源: {dataSource}
+          </span>
+          <span className="text-sm text-muted-foreground">
+            最后更新: {lastUpdate}
+          </span>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={fetchTyphoons}
+          disabled={loading}
+        >
+          {loading ? (
+            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+          ) : (
+            <RefreshCw className="h-4 w-4 mr-2" />
+          )}
+          刷新数据
+        </Button>
+      </div>
+
       {/* Header Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card className="bg-gradient-to-br from-blue-500/10 to-blue-600/10 border-blue-500/20">
@@ -98,7 +176,7 @@ export default function HomePage() {
                 <span>台风实时监测</span>
               </CardTitle>
               <Badge variant="outline" className="text-green-500 border-green-500">
-                实时更新
+                MapLibre GL JS
               </Badge>
             </div>
           </CardHeader>

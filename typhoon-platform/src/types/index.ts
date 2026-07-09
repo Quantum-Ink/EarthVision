@@ -33,14 +33,18 @@ export interface TyphoonPosition {
   latitude: number
   longitude: number
   windSpeed: number
+  windGust?: number
   pressure: number
   category: TyphoonCategory
   timestamp: string
+  forecastHour?: number
   movementSpeed?: number
   movementDir?: string
   radius15knots?: number
   radius30knots?: number
   radius50knots?: number
+  source?: string
+  confidence?: number
 }
 
 export interface TyphoonForecast {

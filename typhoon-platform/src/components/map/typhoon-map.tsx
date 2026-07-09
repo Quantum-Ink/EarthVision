@@ -1,8 +1,8 @@
 'use client'
 
 import React, { useEffect, useRef, useState } from 'react'
-import mapboxgl from 'mapbox-gl'
-import 'mapbox-gl/dist/mapbox-gl.css'
+import maplibregl from 'maplibre-gl'
+import 'maplibre-gl/dist/maplibre-gl.css'
 import { TyphoonData } from '@/types'
 import { getCategoryColor } from '@/lib/utils'
 
@@ -14,6 +14,30 @@ interface TyphoonMapProps {
   className?: string
 }
 
+// 免费底图源
+const TILE_SOURCES = {
+  osm: {
+    name: 'OSM Standard',
+    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: '&copy; OpenStreetMap contributors',
+  },
+  carto_light: {
+    name: 'Carto Light',
+    url: 'https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+    attribution: '&copy; CartoDB',
+  },
+  carto_dark: {
+    name: 'Carto Dark',
+    url: 'https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+    attribution: '&copy; CartoDB',
+  },
+  opentopo: {
+    name: 'OpenTopoMap',
+    url: 'https://a.tile.opentopomap.org/{z}/{x}/{y}.png',
+    attribution: '&copy; OpenTopoMap',
+  },
+}
+
 export function TyphoonMap({
   typhoons,
   center = [130, 20],
@@ -22,56 +46,82 @@ export function TyphoonMap({
   className = '',
 }: TyphoonMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null)
-  const map = useRef<mapboxgl.Map | null>(null)
+  const map = useRef<maplibregl.Map | null>(null)
   const [loaded, setLoaded] = useState(false)
+  const [currentTile, setCurrentTile] = useState('carto_dark')
 
   useEffect(() => {
     if (!mapContainer.current) return
 
-    mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || ''
+    const tileSource = TILE_SOURCES[currentTile as keyof typeof TILE_SOURCES]
 
-    map.current = new mapboxgl.Map({
+    map.current = new maplibregl.Map({
       container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/dark-v11',
+      style: {
+        version: 8,
+        sources: {
+          'raster-tiles': {
+            type: 'raster',
+            tiles: [tileSource.url.replace('{z}/{x}/{y}', '{z}/{x}/{y}')],
+            tileSize: 256,
+            attribution: tileSource.attribution,
+          },
+        },
+        layers: [
+          {
+            id: 'simple-tiles',
+            type: 'raster',
+            source: 'raster-tiles',
+            minzoom: 0,
+            maxzoom: 22,
+          },
+        ],
+      },
       center: center,
       zoom: zoom,
-      projection: 'globe',
+      minZoom: 2,
+      maxZoom: 18,
     })
+
+    map.current.addControl(new maplibregl.NavigationControl(), 'top-right')
+    map.current.addControl(new maplibregl.ScaleControl(), 'bottom-left')
 
     map.current.on('load', () => {
       setLoaded(true)
-      map.current?.setFog({
-        color: 'rgb(15, 23, 42)',
-        'high-color': 'rgb(30, 41, 59)',
-        'horizon-blend': 0.1,
-      })
     })
 
     return () => {
       map.current?.remove()
     }
-  }, [])
+  }, [currentTile])
 
   useEffect(() => {
     if (!map.current || !loaded) return
 
-    // Remove existing markers
+    // 清除现有标记
     const existingMarkers = document.querySelectorAll('.typhoon-marker')
     existingMarkers.forEach((marker) => marker.remove())
 
-    // Remove existing paths
-    if (map.current.getLayer('typhoon-paths')) {
-      map.current.removeLayer('typhoon-paths')
-    }
-    if (map.current.getSource('typhoon-paths')) {
-      map.current.removeSource('typhoon-paths')
-    }
+    // 清除现有路径
+    const layers = map.current.getStyle().layers || []
+    layers.forEach((layer) => {
+      if (layer.id.startsWith('typhoon-')) {
+        map.current?.removeLayer(layer.id)
+      }
+    })
 
-    // Add typhoon markers and paths
+    const sources = map.current.getStyle().sources || {}
+    Object.keys(sources).forEach((key) => {
+      if (key.startsWith('typhoon-')) {
+        map.current?.removeSource(key)
+      }
+    })
+
+    // 添加台风标记和路径
     typhoons.forEach((typhoon) => {
       if (!map.current) return
 
-      // Create marker element
+      // 创建台风标记
       const markerEl = document.createElement('div')
       markerEl.className = 'typhoon-marker'
       markerEl.style.width = '40px'
@@ -79,126 +129,49 @@ export function TyphoonMap({
       markerEl.style.position = 'relative'
       markerEl.style.cursor = 'pointer'
 
-      // Create typhoon icon
       const icon = document.createElement('div')
       icon.style.width = '100%'
       icon.style.height = '100%'
       icon.style.borderRadius = '50%'
       icon.style.backgroundColor = getCategoryColor(typhoon.category)
-      icon.style.opacity = '0.8'
+      icon.style.opacity = '0.9'
       icon.style.display = 'flex'
       icon.style.alignItems = 'center'
       icon.style.justifyContent = 'center'
       icon.style.boxShadow = `0 0 20px ${getCategoryColor(typhoon.category)}`
+      icon.style.border = '2px solid white'
       icon.innerHTML = '🌀'
       icon.style.fontSize = '20px'
-
       markerEl.appendChild(icon)
 
-      // Add click handler
+      // 点击事件
       markerEl.addEventListener('click', () => {
         onTyphoonClick?.(typhoon)
       })
 
-      // Add wind circles
-      if (typhoon.radius50knots) {
-        const circle50 = document.createElement('div')
-        circle50.style.position = 'absolute'
-        circle50.style.width = `${typhoon.radius50knots / 5}px`
-        circle50.style.height = `${typhoon.radius50knots / 5}px`
-        circle50.style.borderRadius = '50%'
-        circle50.style.border = `2px solid ${getCategoryColor(typhoon.category)}`
-        circle50.style.opacity = '0.3'
-        circle50.style.top = '50%'
-        circle50.style.left = '50%'
-        circle50.style.transform = 'translate(-50%, -50%)'
-        circle50.style.animation = 'pulse 2s infinite'
-        markerEl.appendChild(circle50)
-      }
-
-      // Add marker to map
-      new mapboxgl.Marker(markerEl)
+      // 添加标记
+      new maplibregl.Marker(markerEl)
         .setLngLat([typhoon.currentLng, typhoon.currentLat])
         .addTo(map.current)
 
-      // Add path line
-      if (typhoon.positions && typhoon.positions.length > 1) {
-        const coordinates = typhoon.positions.map((pos) => [pos.longitude, pos.latitude] as [number, number])
-
-        // Add source
-        const sourceId = `typhoon-path-${typhoon.id}`
-        if (!map.current.getSource(sourceId)) {
-          map.current.addSource(sourceId, {
-            type: 'geojson',
-            data: {
-              type: 'Feature',
-              properties: {},
-              geometry: {
-                type: 'LineString',
-                coordinates: coordinates,
-              },
-            },
-          })
-
-          // Add line layer
-          map.current.addLayer({
-            id: `typhoon-path-line-${typhoon.id}`,
-            type: 'line',
-            source: sourceId,
-            layout: {
-              'line-join': 'round',
-              'line-cap': 'round',
-            },
-            paint: {
-              'line-color': getCategoryColor(typhoon.category),
-              'line-width': 3,
-              'line-opacity': 0.8,
-            },
-          })
-
-          // Add dots for each position
-          typhoon.positions.forEach((pos, index) => {
-            const dotEl = document.createElement('div')
-            dotEl.style.width = '8px'
-            dotEl.style.height = '8px'
-            dotEl.style.borderRadius = '50%'
-            dotEl.style.backgroundColor = getCategoryColor(pos.category)
-            dotEl.style.opacity = index === typhoon.positions!.length - 1 ? '1' : '0.5'
-
-            new mapboxgl.Marker(dotEl)
-              .setLngLat([pos.longitude, pos.latitude])
-              .addTo(map.current!)
-          })
-        }
-      }
-
-      // Add popup with info
-      const popup = new mapboxgl.Popup({
+      // 添加信息弹窗
+      const popup = new maplibregl.Popup({
         closeButton: false,
         closeOnClick: false,
         offset: 25,
         className: 'typhoon-popup',
       }).setHTML(`
-        <div style="padding: 10px; min-width: 200px;">
+        <div style="padding: 12px; min-width: 220px; background: #1e293b; color: white; border-radius: 8px;">
           <h3 style="margin: 0 0 8px 0; font-weight: bold; color: ${getCategoryColor(typhoon.category)}">
-            ${typhoon.name} ${typhoon.nameCn ? `(${typhoon.nameCn})` : ''}
+            🌀 ${typhoon.name} ${typhoon.nameCn ? `(${typhoon.nameCn})` : ''}
           </h3>
-          <p style="margin: 4px 0; font-size: 12px;">
-            <strong>位置:</strong> ${typhoon.currentLat.toFixed(1)}°N, ${typhoon.currentLng.toFixed(1)}°E
-          </p>
-          <p style="margin: 4px 0; font-size: 12px;">
-            <strong>最大风速:</strong> ${typhoon.maxWindSpeed} knots
-          </p>
-          <p style="margin: 4px 0; font-size: 12px;">
-            <strong>最低气压:</strong> ${typhoon.minPressure} hPa
-          </p>
-          <p style="margin: 4px 0; font-size: 12px;">
-            <strong>强度:</strong> ${getCategoryName(typhoon.category)}
-          </p>
+          <p style="margin: 4px 0; font-size: 13px;">📍 ${typhoon.currentLat.toFixed(1)}°N, ${typhoon.currentLng.toFixed(1)}°E</p>
+          <p style="margin: 4px 0; font-size: 13px;">💨 最大风速: ${typhoon.maxWindSpeed} knots</p>
+          <p style="margin: 4px 0; font-size: 13px;">🔽 最低气压: ${typhoon.minPressure} hPa</p>
+          <p style="margin: 4px 0; font-size: 13px;">📊 强度: ${getCategoryName(typhoon.category)}</p>
         </div>
       `)
 
-      // Show popup on hover
       markerEl.addEventListener('mouseenter', () => {
         popup.setLngLat([typhoon.currentLng, typhoon.currentLat]).addTo(map.current!)
       })
@@ -206,36 +179,86 @@ export function TyphoonMap({
       markerEl.addEventListener('mouseleave', () => {
         popup.remove()
       })
+
+      // 添加历史路径
+      if (typhoon.positions && typhoon.positions.length > 1) {
+        const coordinates = typhoon.positions.map((pos) => [pos.longitude, pos.latitude] as [number, number])
+        const sourceId = `typhoon-path-${typhoon.id}`
+
+        map.current.addSource(sourceId, {
+          type: 'geojson',
+          data: {
+            type: 'Feature',
+            properties: {},
+            geometry: {
+              type: 'LineString',
+              coordinates: coordinates,
+            },
+          },
+        })
+
+        map.current.addLayer({
+          id: `typhoon-path-line-${typhoon.id}`,
+          type: 'line',
+          source: sourceId,
+          layout: {
+            'line-join': 'round',
+            'line-cap': 'round',
+          },
+          paint: {
+            'line-color': getCategoryColor(typhoon.category),
+            'line-width': 3,
+            'line-opacity': 0.8,
+          },
+        })
+
+        // 添加路径点
+        typhoon.positions.forEach((pos, index) => {
+          const dotEl = document.createElement('div')
+          dotEl.style.width = '6px'
+          dotEl.style.height = '6px'
+          dotEl.style.borderRadius = '50%'
+          dotEl.style.backgroundColor = getCategoryColor(pos.category)
+          dotEl.style.opacity = index === typhoon.positions!.length - 1 ? '1' : '0.5'
+
+          new maplibregl.Marker(dotEl)
+            .setLngLat([pos.longitude, pos.latitude])
+            .addTo(map.current!)
+        })
+      }
     })
   }, [typhoons, loaded, onTyphoonClick])
 
   return (
     <div className={`relative ${className}`}>
       <div ref={mapContainer} className="w-full h-full" />
+
+      {/* 底图切换 */}
+      <div className="absolute top-2 left-2 z-10 bg-slate-800/90 rounded-lg p-2 flex gap-1">
+        {Object.entries(TILE_SOURCES).map(([key, source]) => (
+          <button
+            key={key}
+            onClick={() => setCurrentTile(key)}
+            className={`px-2 py-1 text-xs rounded ${
+              currentTile === key
+                ? 'bg-blue-500 text-white'
+                : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+            }`}
+          >
+            {source.name}
+          </button>
+        ))}
+      </div>
+
       <style jsx global>{`
-        @keyframes pulse {
-          0% {
-            transform: translate(-50%, -50%) scale(1);
-            opacity: 0.3;
-          }
-          50% {
-            transform: translate(-50%, -50%) scale(1.1);
-            opacity: 0.5;
-          }
-          100% {
-            transform: translate(-50%, -50%) scale(1);
-            opacity: 0.3;
-          }
+        .typhoon-popup .maplibregl-popup-content {
+          background: transparent !important;
+          padding: 0 !important;
+          border: none !important;
+          box-shadow: none !important;
         }
-        .typhoon-popup .mapboxgl-popup-content {
-          background: rgba(15, 23, 42, 0.95);
-          color: white;
-          border: 1px solid rgba(100, 116, 139, 0.5);
-          border-radius: 8px;
-          padding: 0;
-        }
-        .typhoon-popup .mapboxgl-popup-tip {
-          border-top-color: rgba(15, 23, 42, 0.95);
+        .typhoon-popup .maplibregl-popup-tip {
+          display: none !important;
         }
       `}</style>
     </div>

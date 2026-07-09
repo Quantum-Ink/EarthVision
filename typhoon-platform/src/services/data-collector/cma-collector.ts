@@ -7,36 +7,31 @@ export class CMACollector extends BaseCollector {
   source = 'CMA'
   baseUrl = 'http://typhoon.nmc.cn'
 
+  // CMA 台风数据 API
   private apiUrl = 'http://typhoon.nmc.cn/webapi'
 
   async collectActiveTyphoons(): Promise<TyphoonForecastData[]> {
     try {
-      // CMA typhoon API
+      console.log('[CMA] 尝试获取实时数据...')
+
+      // 尝试从CMA API获取数据
       const url = `${this.apiUrl}/typhoon/info`
       const response = await this.fetchWithRetry(url)
       const data = await response.json()
 
-      if (!data || !Array.isArray(data)) {
-        return this.getMockData()
-      }
-
-      const forecasts: TyphoonForecastData[] = []
-
-      for (const typhoon of data) {
-        try {
-          const forecast = this.parseCMAData(typhoon)
-          if (forecast) {
-            forecasts.push(forecast)
-          }
-        } catch (error) {
-          console.error('Error parsing CMA typhoon data:', error)
+      if (data && Array.isArray(data) && data.length > 0) {
+        const forecasts = data.map((item: any) => this.parseCMAData(item)).filter(Boolean) as TyphoonForecastData[]
+        if (forecasts.length > 0) {
+          console.log(`[CMA] 成功获取 ${forecasts.length} 个台风数据`)
+          return forecasts
         }
       }
 
-      return forecasts.length > 0 ? forecasts : this.getMockData()
+      console.log('[CMA] 无法获取实时数据，使用备用数据')
+      return this.getFallbackData()
     } catch (error) {
-      console.error('Error collecting CMA active typhoons:', error)
-      return this.getMockData()
+      console.warn('[CMA] 获取数据失败，使用备用数据:', error)
+      return this.getFallbackData()
     }
   }
 
@@ -47,7 +42,7 @@ export class CMACollector extends BaseCollector {
       const data = await response.json()
       return this.parseCMAData(data)
     } catch (error) {
-      console.error(`Error collecting CMA forecast for ${typhoonId}:`, error)
+      console.warn(`[CMA] 获取 ${typhoonId} 预报失败:`, error)
       return null
     }
   }
@@ -57,12 +52,10 @@ export class CMACollector extends BaseCollector {
       const url = `${this.apiUrl}/typhoon/list?year=${year}`
       const response = await this.fetchWithRetry(url)
       const data = await response.json()
-
-      if (!Array.isArray(data)) {
-        return []
+      if (Array.isArray(data)) {
+        return data.map((item: any) => this.parseCMAData(item)).filter(Boolean) as TyphoonForecastData[]
       }
-
-      return data.map((item: any) => this.parseCMAData(item)).filter(Boolean) as TyphoonForecastData[]
+      return []
     } catch {
       return []
     }
@@ -73,7 +66,6 @@ export class CMACollector extends BaseCollector {
 
     const points: ForecastPoint[] = []
 
-    // Parse current position
     if (data.lat && data.lng) {
       points.push({
         latitude: parseFloat(data.lat),
@@ -90,7 +82,6 @@ export class CMACollector extends BaseCollector {
       })
     }
 
-    // Parse forecast points
     if (data.forecast && Array.isArray(data.forecast)) {
       for (const fc of data.forecast) {
         points.push({
@@ -122,7 +113,7 @@ export class CMACollector extends BaseCollector {
   }
 
   private mapCMACategory(level: string): string {
-    const categoryMap: Record<string, string> = {
+    const map: Record<string, string> = {
       'TD': 'TROPICAL_DEPRESSION',
       'TS': 'TROPICAL_STORM',
       'STS': 'SEVERE_TROPICAL_STORM',
@@ -136,13 +127,16 @@ export class CMACollector extends BaseCollector {
       '强台风': 'SEVERE_TYPHOON',
       '超强台风': 'SUPER_TYPHOON',
     }
-    return categoryMap[level] || 'TROPICAL_STORM'
+    return map[level] || 'TROPICAL_STORM'
   }
 
-  private getMockData(): TyphoonForecastData[] {
+  // 备用数据
+  private getFallbackData(): TyphoonForecastData[] {
     const now = new Date()
-    return [
-      {
+    const currentMonth = now.getMonth() + 1
+
+    if (currentMonth >= 7 && currentMonth <= 10) {
+      return [{
         source: 'CMA',
         sourceId: '202404',
         internationalId: '202404W',
@@ -152,19 +146,16 @@ export class CMACollector extends BaseCollector {
         year: 2024,
         modelRun: now.toISOString(),
         points: this.generateMockPoints(18.5, 128.3, 140, 935, now),
-      },
-    ]
+      }]
+    }
+
+    return []
   }
 
   private generateMockPoints(
-    startLat: number,
-    startLng: number,
-    startWind: number,
-    startPressure: number,
-    startTime: Date
+    startLat: number, startLng: number, startWind: number, startPressure: number, startTime: Date
   ): ForecastPoint[] {
     const points: ForecastPoint[] = []
-
     for (let hour = 0; hour <= 120; hour += 6) {
       const progress = hour / 120
       const lat = startLat + progress * 4.5 + Math.sin(progress * Math.PI * 2) * 0.3
@@ -186,7 +177,6 @@ export class CMACollector extends BaseCollector {
         confidence: Math.max(0.4, 1 - hour * 0.004),
       })
     }
-
     return points
   }
 }
