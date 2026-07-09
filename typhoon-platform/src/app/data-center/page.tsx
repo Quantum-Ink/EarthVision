@@ -1,10 +1,10 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { TyphoonData } from '@/types'
 import { generateMockTyphoonData } from '@/lib/data'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -34,29 +34,17 @@ import {
   Database,
   Search,
   Download,
-  Filter,
-  RefreshCw,
   Eye,
-  Loader2,
 } from 'lucide-react'
 
 export default function DataCenterPage() {
   const router = useRouter()
-  const [typhoons, setTyphoons] = useState<TyphoonData[]>([])
-  const [filteredTyphoons, setFilteredTyphoons] = useState<TyphoonData[]>([])
-  const [loading, setLoading] = useState(true)
+  const [typhoons] = useState<TyphoonData[]>(() => generateMockTyphoonData())
   const [searchTerm, setSearchTerm] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
 
-  useEffect(() => {
-    const mockData = generateMockTyphoonData()
-    setTyphoons(mockData)
-    setFilteredTyphoons(mockData)
-    setLoading(false)
-  }, [])
-
-  useEffect(() => {
+  const filteredTyphoons = useMemo(() => {
     let result = typhoons
 
     // Search filter
@@ -79,7 +67,7 @@ export default function DataCenterPage() {
       result = result.filter((t) => t.status === statusFilter)
     }
 
-    setFilteredTyphoons(result)
+    return result
   }, [searchTerm, categoryFilter, statusFilter, typhoons])
 
   const handleExportCSV = () => {
@@ -121,14 +109,6 @@ export default function DataCenterPage() {
     a.download = `typhoons-${new Date().toISOString().split('T')[0]}.csv`
     a.click()
     URL.revokeObjectURL(url)
-  }
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[calc(100vh-3.5rem)]">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
-      </div>
-    )
   }
 
   return (

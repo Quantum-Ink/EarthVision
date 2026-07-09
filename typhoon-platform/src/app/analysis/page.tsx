@@ -1,21 +1,16 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import { TyphoonData, AIAnalysis } from '@/types'
 import { generateMockTyphoonData } from '@/lib/data'
 import { AnalysisForm } from '@/components/ai/analysis-form'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Activity, Brain, Zap, Clock } from 'lucide-react'
 
 export default function AnalysisPage() {
-  const [typhoons, setTyphoons] = useState<TyphoonData[]>([])
+  const [typhoons] = useState<TyphoonData[]>(() => generateMockTyphoonData())
   const [analysis, setAnalysis] = useState<AIAnalysis | null>(null)
   const [loading, setLoading] = useState(false)
-
-  useEffect(() => {
-    const mockData = generateMockTyphoonData()
-    setTyphoons(mockData)
-  }, [])
 
   const handleAnalyze = async (typhoonId: string, analysisType: string) => {
     setLoading(true)

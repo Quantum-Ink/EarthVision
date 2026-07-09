@@ -72,10 +72,6 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState<string | null>(null)
 
-  useEffect(() => {
-    fetchAdminData()
-  }, [])
-
   const fetchAdminData = async () => {
     try {
       const response = await fetch('/api/admin')
@@ -92,6 +88,10 @@ export default function AdminPage() {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    fetchAdminData()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSync = async (sourceId: string) => {
     setSyncing(sourceId)

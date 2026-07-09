@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { TyphoonData } from '@/types'
 import { generateMockTyphoonData } from '@/lib/data'
@@ -24,32 +24,15 @@ import {
   Activity,
   TrendingUp,
   ArrowRight,
-  Loader2,
 } from 'lucide-react'
 
 export default function HomePage() {
   const router = useRouter()
-  const [typhoons, setTyphoons] = useState<TyphoonData[]>([])
-  const [loading, setLoading] = useState(true)
+  const [typhoons] = useState<TyphoonData[]>(() => generateMockTyphoonData())
   const [selectedTyphoon, setSelectedTyphoon] = useState<TyphoonData | null>(null)
-
-  useEffect(() => {
-    // Load mock data
-    const mockData = generateMockTyphoonData()
-    setTyphoons(mockData)
-    setLoading(false)
-  }, [])
 
   const activeTyphoons = typhoons.filter((t) => t.status === 'ACTIVE')
   const extremeTyphoons = typhoons.filter((t) => t.category === 'SUPER_TYPHOON' || t.category === 'SEVERE_TYPHOON')
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[calc(100vh-3.5rem)]">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
-      </div>
-    )
-  }
 
   return (
     <div className="container py-6 space-y-6">
